@@ -3,7 +3,7 @@
 #include <WinSock2.h>
 #pragma comment(lib, "ws2_32.lib")
 
-int main(char argc, char* argv[]) {
+int main(int argc, char* argv[]) {
 	std::cout << "PPServer" << std::endl;
 
 	int iRet = 0;
