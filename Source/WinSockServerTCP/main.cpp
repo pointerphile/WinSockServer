@@ -10,7 +10,7 @@
 #pragma comment(lib, "ws2_32.lib")
 
 #define SERVER_PORT 10000
-#define BUFFERSIZE 4
+#define BUFFERSIZE 512
 
 struct USER {
 	SOCKET socketClient;
