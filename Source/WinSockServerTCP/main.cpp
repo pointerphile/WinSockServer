@@ -4,9 +4,6 @@
 #include <list>
 #include <functional>
 #include <WinSock2.h>
-#include <thread>
-#include <future>
-#undef max
 #pragma comment(lib, "ws2_32.lib")
 
 #define SERVER_PORT 10000
@@ -42,14 +39,6 @@ int SetNonBlockingSocket(SOCKET sock, u_long iMode) {
 
 bool GetServerShutdown(bool* flag) {
 	while (1) {
-		char buf = 0;
-		if (std::cin.peek() == '\n') {
-			break;
-		}
-		else {
-			std::cin >> buf;
-		}
-		std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 	}
 	*flag = true;
 	return true;
@@ -92,10 +81,8 @@ int main(int argc, char* argv[]) {
 
 	bool isServerShutdown = false;
 	std::list<USER> userlist;
-	std::thread threadGetServerShutdown(GetServerShutdown, &isServerShutdown);
-	threadGetServerShutdown.detach();
 
-	while(!isServerShutdown){
+	while(1){
 		USER user;
 
 		int iAddLen = sizeof(user.saClient);
