@@ -2,12 +2,12 @@
 #include <iostream>
 #include <string>
 #include <list>
-#include <functional>
+#include <thread>
 #include <WinSock2.h>
 #pragma comment(lib, "ws2_32.lib")
 
 #define SERVER_PORT 10000
-#define BUFFERSIZE 512
+#define BUFFERSIZE 4
 
 struct USER {
 	SOCKET socketClient;
@@ -39,6 +39,12 @@ int SetNonBlockingSocket(SOCKET sock, u_long iMode) {
 
 bool GetServerShutdown(bool* flag) {
 	while (1) {
+		std::string buf;
+		std::getline(std::cin, buf);
+
+		if (buf.length() == 0) {
+			break;
+		}
 	}
 	*flag = true;
 	return true;
@@ -81,8 +87,10 @@ int main(int argc, char* argv[]) {
 
 	bool isServerShutdown = false;
 	std::list<USER> userlist;
+	std::thread threadGetShutdown(GetServerShutdown, &isServerShutdown);
+	threadGetShutdown.detach();
 
-	while(1){
+	while(!isServerShutdown){
 		USER user;
 
 		int iAddLen = sizeof(user.saClient);
@@ -103,7 +111,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		if (userlist.size() > 0) {
-			for (auto iter = userlist.begin(); iter != userlist.end(); iter++) {
+			for (auto iter = userlist.begin(); iter != userlist.end(); ++iter) {
 				std::string strUser;
 				strUser.clear();
 				strUser.append(inet_ntoa(iter->saClient.sin_addr));
@@ -135,7 +143,7 @@ int main(int argc, char* argv[]) {
 					strEcho.append(" : ");
 					strEcho.append(iter->buf);
 					std::cout << strEcho << std::endl;
-					for (auto senditer = userlist.begin(); senditer != userlist.end(); senditer++) {
+					for (auto senditer = userlist.begin(); senditer != userlist.end(); ++senditer) {
 						int iSendSize = send(senditer->socketClient, strEcho.c_str(), (int)strEcho.length(), 0);
 						if (iSendSize == SOCKET_ERROR)
 						{
