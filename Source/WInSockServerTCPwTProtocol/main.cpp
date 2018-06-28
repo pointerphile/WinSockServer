@@ -83,7 +83,7 @@ int main(int argc, char* argv[]) {
 	if (iRet == SOCKET_ERROR) {
 		return -1;
 	}
-	
+
 	iRet = listen(socketListen, SOMAXCONN);
 	if (iRet == SOCKET_ERROR) {
 		return -1;
@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) {
 	std::thread threadGetShutdown(GetServerShutdown, &isServerShutdown);
 	threadGetShutdown.detach();
 
-	while(!isServerShutdown){
+	while (!isServerShutdown) {
 		USER user;
 
 		int iAddLen = sizeof(user.saClient);
@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
 		}
 		else {
 			std::cout << inet_ntoa(user.saClient.sin_addr) << ":" << ntohs(user.saClient.sin_port)
-				<< " Connected."<<std::endl;
+				<< " Connected." << std::endl;
 
 			userlist.push_back(user);
 		}
