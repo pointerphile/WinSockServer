@@ -9,7 +9,7 @@
 #pragma comment(lib, "ws2_32.lib")
 
 #define SERVER_PORT 10000
-#define BUFFERSIZE 4
+#define BUFFERSIZE 2048
 
 struct USER {
 	SOCKET socketClient;
@@ -72,7 +72,7 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
-	SetNonBlockingSocket(socketListen, TRUE);
+	SetNonBlockingSocket(socketListen, true);
 
 	SOCKADDR_IN saServer;
 	saServer = { 0 };
@@ -105,6 +105,7 @@ int main(int argc, char* argv[]) {
 			if (WSAGetLastError() != WSAEWOULDBLOCK) {
 				std::cout << inet_ntoa(user.saClient.sin_addr) << ":" << ntohs(user.saClient.sin_port)
 					<< " Disconnected." << std::endl;
+				err_display();
 				closesocket(user.socketClient);
 				break;
 			}
@@ -133,35 +134,19 @@ int main(int argc, char* argv[]) {
 				if (iter->iRecvSize == SOCKET_ERROR) {
 					if (WSAGetLastError() != WSAEWOULDBLOCK) {
 						std::cout << strUser << " Disconnected." << std::endl;
-						char msg[] = "recv()";
 						err_display();
 						closesocket(iter->socketClient);
 						userlist.erase(iter);
 						break;
 					}
 				}
-			}
-
-			for (auto iter = userlist.begin(); iter != userlist.end(); ++iter) {
 				if (iter->iRecvSize > 0) {
-					std::string strUser;
-					strUser.append(inet_ntoa(iter->saClient.sin_addr));
-					strUser.append(":");
-					strUser.append(std::to_string(ntohs(iter->saClient.sin_port)));
-
-					std::string strEcho;
-					iter->buf[iter->iRecvSize] = '\0';
-					strEcho.append(strUser);
-					strEcho.append(" : ");
-					strEcho.append(iter->buf);
-					std::cout << strEcho << std::endl;
+					std::cout << iter->buf << std::endl;
 					for (auto senditer = userlist.begin(); senditer != userlist.end(); ++senditer) {
-						int iSendSize = send(senditer->socketClient, strEcho.c_str(), strEcho.size(), 0);
+						int iSendSize = send(senditer->socketClient, iter->buf, iter->iRecvSize, 0);
 						if (iSendSize == SOCKET_ERROR)
 						{
-							if (WSAGetLastError() != WSAEWOULDBLOCK)
-							{
-								std::cout << strUser << " Disconnected." << std::endl;
+							if (WSAGetLastError() != WSAEWOULDBLOCK) {
 								closesocket(senditer->socketClient);
 								userlist.erase(senditer);
 								break;
