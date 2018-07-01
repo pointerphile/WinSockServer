@@ -21,6 +21,9 @@ struct USER {
 	//std::string strBuffer;
 };
 
+std::list<USER> userlist;
+bool isServerShutdown = false;
+
 void err_display() {
 	LPVOID lpMsgBuf;
 	FormatMessage(
@@ -54,6 +57,84 @@ bool GetServerShutdown(bool* flag) {
 	}
 	*flag = true;
 	return true;
+}
+
+int AcceptUser(SOCKET socketListen) {
+	while (!isServerShutdown) {
+		USER user;
+		int iAddLen = sizeof(user.saClient);
+		user.socketClient = accept(socketListen, (SOCKADDR*)&(user.saClient), &iAddLen);
+		if (user.socketClient == SOCKET_ERROR) {
+			if (WSAGetLastError() != WSAEWOULDBLOCK) {
+				std::cout << inet_ntoa(user.saClient.sin_addr) << ":" << ntohs(user.saClient.sin_port)
+					<< " Disconnected." << std::endl;
+				err_display();
+				shutdown(user.socketClient, SD_BOTH);
+				closesocket(user.socketClient);
+				break;
+				return -1;
+			}
+		}
+		else {
+			std::cout << inet_ntoa(user.saClient.sin_addr) << ":" << ntohs(user.saClient.sin_port)
+				<< " Connected." << std::endl;
+
+			userlist.push_back(user);
+		}
+	}
+	return 0;
+}
+
+int ReceiveAndBroadcast() {
+	while (!isServerShutdown) {
+		if (userlist.size() > 0) {
+			for (auto iter = userlist.begin(); iter != userlist.end(); ++iter) {
+				std::string strUser;
+				strUser.append(inet_ntoa(iter->saClient.sin_addr));
+				strUser.append(":");
+				strUser.append(std::to_string(ntohs(iter->saClient.sin_port)));
+
+				if (!isServerShutdown) {
+					iter->iRecvSize = recv(iter->socketClient, iter->buf, sizeof(char) * BUFFERSIZE, 0);
+				}
+				if (iter->iRecvSize == 0) {
+					std::cout << strUser << " Connection closed." << std::endl;
+					shutdown(iter->socketClient, SD_BOTH);
+					closesocket(iter->socketClient);
+					userlist.erase(iter);
+					break;
+				}
+				if (iter->iRecvSize == SOCKET_ERROR) {
+					if (WSAGetLastError() != WSAEWOULDBLOCK) {
+						std::cout << strUser << " Disconnected." << std::endl;
+						err_display();
+						shutdown(iter->socketClient, SD_BOTH);
+						closesocket(iter->socketClient);
+						userlist.erase(iter);
+						break;
+					}
+				}
+				if (iter->iRecvSize > 0) {
+					std::cout << iter->buf << std::endl;
+
+					for (auto sendIter = userlist.begin(); sendIter != userlist.end(); ++sendIter) {
+						int iSendSize = send(sendIter->socketClient, iter->buf, iter->iRecvSize, 0);
+						if (iSendSize == SOCKET_ERROR)
+						{
+							if (WSAGetLastError() != WSAEWOULDBLOCK) {
+								shutdown(iter->socketClient, SD_BOTH);
+								closesocket(sendIter->socketClient);
+								userlist.erase(sendIter);
+								break;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return 0;
 }
 
 int main(int argc, char* argv[]) {
@@ -91,79 +172,22 @@ int main(int argc, char* argv[]) {
 
 	std::cout << "Ready......" << std::endl;
 
-	bool isServerShutdown = false;
-	std::list<USER> userlist;
 	std::thread threadGetShutdown(GetServerShutdown, &isServerShutdown);
 	threadGetShutdown.detach();
 
-	while (!isServerShutdown) {
-		USER user;
-
-		int iAddLen = sizeof(user.saClient);
-		user.socketClient = accept(socketListen, (SOCKADDR*)&(user.saClient), &iAddLen);
-		if (user.socketClient == SOCKET_ERROR) {
-			if (WSAGetLastError() != WSAEWOULDBLOCK) {
-				std::cout << inet_ntoa(user.saClient.sin_addr) << ":" << ntohs(user.saClient.sin_port)
-					<< " Disconnected." << std::endl;
-				err_display();
-				closesocket(user.socketClient);
-				break;
-			}
-		}
-		else {
-			std::cout << inet_ntoa(user.saClient.sin_addr) << ":" << ntohs(user.saClient.sin_port)
-				<< " Connected." << std::endl;
-
-			userlist.push_back(user);
-		}
-
-		if (userlist.size() > 0) {
-			for (auto iter = userlist.begin(); iter != userlist.end(); ++iter) {
-				std::string strUser;
-				strUser.append(inet_ntoa(iter->saClient.sin_addr));
-				strUser.append(":");
-				strUser.append(std::to_string(ntohs(iter->saClient.sin_port)));
-
-				iter->iRecvSize = recv(iter->socketClient, iter->buf, sizeof(char) * BUFFERSIZE, 0);
-				if (iter->iRecvSize == 0) {
-					std::cout << strUser << " Connection closed." << std::endl;
-					closesocket(iter->socketClient);
-					userlist.erase(iter);
-					break;
-				}
-				if (iter->iRecvSize == SOCKET_ERROR) {
-					if (WSAGetLastError() != WSAEWOULDBLOCK) {
-						std::cout << strUser << " Disconnected." << std::endl;
-						err_display();
-						closesocket(iter->socketClient);
-						userlist.erase(iter);
-						break;
-					}
-				}
-				if (iter->iRecvSize > 0) {
-					std::cout << iter->buf << std::endl;
-					for (auto senditer = userlist.begin(); senditer != userlist.end(); ++senditer) {
-						int iSendSize = send(senditer->socketClient, iter->buf, iter->iRecvSize, 0);
-						if (iSendSize == SOCKET_ERROR)
-						{
-							if (WSAGetLastError() != WSAEWOULDBLOCK) {
-								closesocket(senditer->socketClient);
-								userlist.erase(senditer);
-								break;
-							}
-						}
-					}
-				}
-			}
-		}
-	}
+	std::thread threadAccept(AcceptUser, socketListen);
+	std::thread threadReceiveAndBroadcast(ReceiveAndBroadcast);
+	threadAccept.join();
+	threadReceiveAndBroadcast.join();
 
 	std::cout << "Shutting down..." << std::endl;
 	while (userlist.size()) {
+		shutdown(userlist.back().socketClient, SD_BOTH);
 		closesocket(userlist.back().socketClient);
 		userlist.pop_back();
 	}
 
+	shutdown(socketListen, SD_BOTH);
 	closesocket(socketListen);
 	WSACleanup();
 	system("pause");
