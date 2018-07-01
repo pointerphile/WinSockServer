@@ -15,14 +15,14 @@ struct USER {
 	SOCKET socketClient;
 	SOCKADDR_IN saClient;
 	char buf[BUFFERSIZE + 0] = { 0 };
-	int iRecvSize;
+	int iRecvByte = 0;
 	bool m_bAccountAck;
 	std::list<UPACKET> m_Packets;
-	//std::string strBuffer;
+	std::string m_strUsername;
 };
 
 std::list<USER> userlist;
-bool isServerShutdown = false;
+bool isShutdown = false;
 
 void err_display() {
 	LPVOID lpMsgBuf;
@@ -59,8 +59,15 @@ bool GetServerShutdown(bool* flag) {
 	return true;
 }
 
+void DisconnectClient(std::list<USER>::iterator iterator) {
+	iterator->m_bAccountAck = false;
+	shutdown(iterator->socketClient, SD_BOTH);
+	closesocket(iterator->socketClient);
+	userlist.erase(iterator);
+}
+
 int AcceptUser(SOCKET socketListen) {
-	while (!isServerShutdown) {
+	while (!isShutdown) {
 		USER user;
 		int iAddLen = sizeof(user.saClient);
 		user.socketClient = accept(socketListen, (SOCKADDR*)&(user.saClient), &iAddLen);
@@ -71,22 +78,94 @@ int AcceptUser(SOCKET socketListen) {
 				err_display();
 				shutdown(user.socketClient, SD_BOTH);
 				closesocket(user.socketClient);
-				break;
 				return -1;
 			}
 		}
 		else {
 			std::cout << inet_ntoa(user.saClient.sin_addr) << ":" << ntohs(user.saClient.sin_port)
 				<< " Connected." << std::endl;
+			user.m_bAccountAck = true;
 
+			UPACKET sendmsg = { 0 };
+			std::string strWelcome = "서버 : 이름을 입력 : ";
+			strcpy_s(sendmsg.msg, strWelcome.c_str());
+			sendmsg.ph.len = (WORD)strlen(sendmsg.msg) + PACKET_HEAD_SIZE;
+			sendmsg.ph.type = PACKET_CHAT_NAME_REQ;
+
+			int iSendByte = send(user.socketClient, (char*)&sendmsg, sendmsg.ph.len, 0);
+			if (iSendByte == SOCKET_ERROR)
+			{
+				if (WSAGetLastError() != WSAEWOULDBLOCK)
+				{
+					std::cout << "Disconnected from server.(Send failed)" << std::endl;
+					break;
+				}
+			}
 			userlist.push_back(user);
 		}
 	}
 	return 0;
 }
 
+int Receive(std::list<USER>::iterator iter) {
+	
+	while ((iter->iRecvByte < PACKET_HEAD_SIZE) && (iter->m_bAccountAck)) {
+		iter->iRecvByte += recv(iter->socketClient, &(iter->buf[iter->iRecvByte]), PACKET_HEAD_SIZE - iter->iRecvByte, 0);
+		if (iter->iRecvByte == 0 || iter->iRecvByte == SOCKET_ERROR) {
+			return iter->iRecvByte;
+		}
+	}
+
+	if ((iter->iRecvByte == PACKET_HEAD_SIZE) && (!isShutdown)) {
+		UPACKET rcvmsg = { 0 };
+		memcpy(&rcvmsg, iter->buf, PACKET_HEAD_SIZE);
+		while (iter->iRecvByte < rcvmsg.ph.len) {
+			iter->iRecvByte += recv(iter->socketClient, iter->buf, rcvmsg.ph.len - iter->iRecvByte, 0);
+			if (iter->iRecvByte == SOCKET_ERROR) {
+				if (WSAGetLastError() != WSAEWOULDBLOCK) {
+					std::cout << "Disconnected from client.(Receiving body failed)" << std::endl;
+					err_display();
+					return iter->iRecvByte;
+				}
+			}
+		}
+		iter->m_Packets.push_back(rcvmsg);
+	}
+
+	return iter->iRecvByte;
+}
+
+int Broadcast(std::list<USER>::iterator iter) {
+	std::string strUsername;
+	strUsername.append(iter->m_strUsername);
+	strUsername.append(" : ");
+	strUsername.append(iter->m_Packets.front().msg);
+
+	UPACKET packet = { 0 };
+	packet.ph.type = PACKET_CHAT_MSG;
+	packet.ph.len = (WORD)strUsername.size() + PACKET_HEAD_SIZE;
+	strcpy_s(packet.msg, strUsername.c_str());
+
+	int iSendByte = 0;
+	for (auto sendIter = userlist.begin(); sendIter != userlist.end(); ++sendIter) {
+		//iSendByte = send(sendIter->socketClient, (char*)&iter->m_Packets.front(), iter->m_Packets.front().ph.len, 0);
+		iSendByte = send(sendIter->socketClient, (char*)&packet, packet.ph.len, 0);
+		if (iSendByte == SOCKET_ERROR)
+		{
+			if (WSAGetLastError() != WSAEWOULDBLOCK) {
+				shutdown(iter->socketClient, SD_BOTH);
+				closesocket(sendIter->socketClient);
+				userlist.erase(sendIter);
+				break;
+			}
+		}
+	}
+
+	return 0;
+}
+
 int ReceiveAndBroadcast() {
-	while (!isServerShutdown) {
+	while (!isShutdown) {
 		if (userlist.size() > 0) {
 			for (auto iter = userlist.begin(); iter != userlist.end(); ++iter) {
 				std::string strUser;
@@ -94,42 +173,37 @@ int ReceiveAndBroadcast() {
 				strUser.append(":");
 				strUser.append(std::to_string(ntohs(iter->saClient.sin_port)));
 
-				if (!isServerShutdown) {
-					iter->iRecvSize = recv(iter->socketClient, iter->buf, sizeof(char) * BUFFERSIZE, 0);
-				}
-				if (iter->iRecvSize == 0) {
-					std::cout << strUser << " Connection closed." << std::endl;
-					shutdown(iter->socketClient, SD_BOTH);
-					closesocket(iter->socketClient);
-					userlist.erase(iter);
+				int iRecvByte = Receive(iter);
+				if (iRecvByte == 0) {
+					std::cout << "Connection closed." << std::endl;
+					DisconnectClient(iter);
 					break;
 				}
-				if (iter->iRecvSize == SOCKET_ERROR) {
+				if (iRecvByte == SOCKET_ERROR) {
 					if (WSAGetLastError() != WSAEWOULDBLOCK) {
-						std::cout << strUser << " Disconnected." << std::endl;
+						std::cout << "Disconnected from client.(Receiving header failed)" << std::endl;
 						err_display();
-						shutdown(iter->socketClient, SD_BOTH);
-						closesocket(iter->socketClient);
-						userlist.erase(iter);
+						DisconnectClient(iter);
 						break;
 					}
 				}
-				if (iter->iRecvSize > 0) {
-					std::cout << iter->buf << std::endl;
 
-					for (auto sendIter = userlist.begin(); sendIter != userlist.end(); ++sendIter) {
-						int iSendSize = send(sendIter->socketClient, iter->buf, iter->iRecvSize, 0);
-						if (iSendSize == SOCKET_ERROR)
-						{
-							if (WSAGetLastError() != WSAEWOULDBLOCK) {
-								shutdown(iter->socketClient, SD_BOTH);
-								closesocket(sendIter->socketClient);
-								userlist.erase(sendIter);
-								break;
-							}
-						}
+				if (iter->m_Packets.size() && iter->m_Packets.front().ph.len && iter->m_bAccountAck) {
+					memcpy(&iter->m_Packets.front().msg, iter->buf, iter->m_Packets.front().ph.len - PACKET_HEAD_SIZE);
+					switch (iter->m_Packets.front().ph.type) {
+					case PACKET_CHAT_MSG: {
+						std::cout << iter->m_strUsername << " : " << iter->m_Packets.front().msg << std::endl;
+						Broadcast(iter);
+						iter->m_Packets.pop_front();
+					}break;
+					case PACKET_CHAT_NAME_ACK: {
+						iter->m_strUsername = iter->m_Packets.front().msg;
+						std::cout << strUser << " named " << iter->m_strUsername << std::endl;
+						iter->m_Packets.pop_front();
+					}break;
 					}
 				}
+				iter->iRecvByte = 0;
 			}
 		}
 	}
@@ -172,7 +246,7 @@ int main(int argc, char* argv[]) {
 
 	std::cout << "Ready......" << std::endl;
 
-	std::thread threadGetShutdown(GetServerShutdown, &isServerShutdown);
+	std::thread threadGetShutdown(GetServerShutdown, &isShutdown);
 	threadGetShutdown.detach();
 
 	std::thread threadAccept(AcceptUser, socketListen);
