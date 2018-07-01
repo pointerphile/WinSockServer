@@ -148,7 +148,6 @@ int Broadcast(std::list<USER>::iterator iter) {
 
 	int iSendByte = 0;
 	for (auto sendIter = userlist.begin(); sendIter != userlist.end(); ++sendIter) {
-		//iSendByte = send(sendIter->socketClient, (char*)&iter->m_Packets.front(), iter->m_Packets.front().ph.len, 0);
 		iSendByte = send(sendIter->socketClient, (char*)&packet, packet.ph.len, 0);
 		if (iSendByte == SOCKET_ERROR)
 		{
