@@ -89,7 +89,7 @@ int AcceptUser(SOCKET socketListen) {
 			UPACKET sendmsg = { 0 };
 			std::string strWelcome = "서버 : 이름을 입력 : ";
 			strcpy_s(sendmsg.msg, strWelcome.c_str());
-			sendmsg.ph.len = (WORD)strlen(sendmsg.msg) + PACKET_HEAD_SIZE;
+			sendmsg.ph.len = (WORD)strlen(sendmsg.msg) + PACKET_HEADER_SIZE;
 			sendmsg.ph.type = PACKET_CHAT_NAME_REQ;
 
 			int iSendByte = send(user.socketClient, (char*)&sendmsg, sendmsg.ph.len, 0);
@@ -108,17 +108,17 @@ int AcceptUser(SOCKET socketListen) {
 }
 
 int Receive(std::list<USER>::iterator iter) {
-	
-	while ((iter->iRecvByte < PACKET_HEAD_SIZE) && (iter->m_bAccountAck)) {
-		iter->iRecvByte += recv(iter->socketClient, &(iter->buf[iter->iRecvByte]), PACKET_HEAD_SIZE - iter->iRecvByte, 0);
+	while ((iter->iRecvByte < PACKET_HEADER_SIZE) && (iter->m_bAccountAck)) {
+		iter->iRecvByte += recv(iter->socketClient, &(iter->buf[iter->iRecvByte]), PACKET_HEADER_SIZE - iter->iRecvByte, 0);
 		if (iter->iRecvByte == 0 || iter->iRecvByte == SOCKET_ERROR) {
 			return iter->iRecvByte;
 		}
 	}
 
-	if ((iter->iRecvByte == PACKET_HEAD_SIZE) && (!isShutdown)) {
+	//패킷 헤더 다 받았다면
+	if ((iter->iRecvByte == PACKET_HEADER_SIZE) && (!isShutdown)) {
 		UPACKET rcvmsg = { 0 };
-		memcpy(&rcvmsg, iter->buf, PACKET_HEAD_SIZE);
+		memcpy(&rcvmsg, iter->buf, PACKET_HEADER_SIZE);
 		while (iter->iRecvByte < rcvmsg.ph.len) {
 			iter->iRecvByte += recv(iter->socketClient, iter->buf, rcvmsg.ph.len - iter->iRecvByte, 0);
 			if (iter->iRecvByte == SOCKET_ERROR) {
@@ -143,7 +143,7 @@ int Broadcast(std::list<USER>::iterator iter) {
 
 	UPACKET packet = { 0 };
 	packet.ph.type = PACKET_CHAT_MSG;
-	packet.ph.len = (WORD)strUsername.size() + PACKET_HEAD_SIZE;
+	packet.ph.len = (WORD)strUsername.size() + PACKET_HEADER_SIZE;
 	strcpy_s(packet.msg, strUsername.c_str());
 
 	int iSendByte = 0;
@@ -187,8 +187,9 @@ int ReceiveAndBroadcast() {
 					}
 				}
 
+				//패킷 전부 받았을 때 작동
 				if (iter->m_Packets.size() && iter->m_Packets.front().ph.len && iter->m_bAccountAck) {
-					memcpy(&iter->m_Packets.front().msg, iter->buf, iter->m_Packets.front().ph.len - PACKET_HEAD_SIZE);
+					memcpy(&iter->m_Packets.front().msg, iter->buf, iter->m_Packets.front().ph.len - PACKET_HEADER_SIZE);
 					switch (iter->m_Packets.front().ph.type) {
 					case PACKET_CHAT_MSG: {
 						std::cout << iter->m_strUsername << " : " << iter->m_Packets.front().msg << std::endl;
