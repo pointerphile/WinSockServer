@@ -23,6 +23,7 @@
     <ProjectGuid>{016C3462-CDC0-4188-A4C7-890288AAEBCD}</ProjectGuid>
     <RootNamespace>WInSockServerTCPwTProtocol</RootNamespace>
     <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
+    <ProjectName>WinSockServerTCPwTProtocol</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
