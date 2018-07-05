@@ -163,6 +163,29 @@ int Broadcast(std::list<USER>::iterator iter) {
 	return 0;
 }
 
+int Broadcast(std::string strParam) {
+	UPACKET packet = { 0 };
+	packet.ph.type = PACKET_CHAT_MSG;
+	packet.ph.len = (WORD)strParam.size() + PACKET_HEADER_SIZE;
+	strcpy_s(packet.msg, strParam.c_str());
+
+	int iSendByte = 0;
+	for (auto sendIter = userlist.begin(); sendIter != userlist.end(); ++sendIter) {
+		iSendByte = send(sendIter->socketClient, (char*)&packet, packet.ph.len, 0);
+		if (iSendByte == SOCKET_ERROR)
+		{
+			if (WSAGetLastError() != WSAEWOULDBLOCK) {
+				shutdown(sendIter->socketClient, SD_BOTH);
+				closesocket(sendIter->socketClient);
+				userlist.erase(sendIter);
+				break;
+			}
+		}
+	}
+
+	return 0;
+}
+
 int ReceiveAndBroadcast() {
 	while (!isShutdown) {
 		if (userlist.size() > 0) {
@@ -198,7 +221,9 @@ int ReceiveAndBroadcast() {
 					}break;
 					case PACKET_CHAT_NAME_ACK: {
 						iter->m_strUsername = iter->m_Packets.front().msg;
-						std::cout << strUser << " named " << iter->m_strUsername << std::endl;
+						std::string ack = strUser + " named : " + iter->m_strUsername;
+						std::cout << ack << std::endl;
+						Broadcast(ack);
 						iter->m_Packets.pop_front();
 					}break;
 					}
