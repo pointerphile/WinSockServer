@@ -87,7 +87,7 @@ int AcceptUser(SOCKET socketListen) {
 			user.m_bAccountAck = true;
 
 			UPACKET sendmsg = { 0 };
-			std::string strWelcome = "서버 : 이름을 입력 : ";
+			std::string strWelcome = "서버 : 이름을 입력하시오";
 			strcpy_s(sendmsg.msg, strWelcome.c_str());
 			sendmsg.ph.len = (WORD)strlen(sendmsg.msg) + PACKET_HEADER_SIZE;
 			sendmsg.ph.type = PACKET_CHAT_NAME_REQ;
